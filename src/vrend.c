@@ -137,7 +137,7 @@ void INIT_VREND(char* title, uint32_t w, uint32_t h){
     }
 
     // -----    6   -----
-    // (Chooses the first suitable physical device)
+    // (Chooses first available discrete gpu)
     uint32_t num_physical_devices = 0;
     vkEnumeratePhysicalDevices(_vk_instance, &num_physical_devices, NULL);
     if(num_physical_devices == 0){
@@ -147,14 +147,14 @@ void INIT_VREND(char* title, uint32_t w, uint32_t h){
     _physical_devices = malloc(sizeof(VkPhysicalDevice) * num_physical_devices);
     vkEnumeratePhysicalDevices(_vk_instance, &num_physical_devices, _physical_devices);
     for(uint32_t i = 0; i < num_physical_devices; i ++){
-        if(_physical_devices != NULL){
+        if(_physical_devices[i] != NULL){
             if(_CheckPhysicalDeviceExtensions(_physical_devices[i]) == VK_FALSE){
                 _physical_devices[i] = NULL;
             }
         }
     }
     for(uint32_t i = 0; i < num_physical_devices; i ++){
-        if(_physical_devices != NULL){
+        if(_physical_devices[i] != NULL){
             struct QueueFamilies qfamilies = _GetQueueFamilies(_physical_devices[i]);
             if(qfamilies.graphics_queue_index == -1 || qfamilies.present_queue_index == -1){
                 _physical_devices[i] = NULL;
@@ -162,13 +162,24 @@ void INIT_VREND(char* title, uint32_t w, uint32_t h){
         }
     }
     for(uint32_t i = 0; i < num_physical_devices; i ++){
-        if(_physical_devices != NULL){
+        if(_physical_devices[i] != NULL){
             if(_CheckPhysicalDeviceSurfaceCapabilities(_physical_devices[i]) == VK_FALSE){
                 _physical_devices[i] = NULL;
             }
         }
     }
-    _SetCurrentPhysicalDevice(_physical_devices[0]);
+    uint32_t index = 0;
+    for(uint32_t i = 0; i < num_physical_devices; i ++){
+        if(_physical_devices[i] != NULL){
+            VkPhysicalDeviceProperties properties = {0};
+            vkGetPhysicalDeviceProperties(_physical_devices[i], &properties);
+            if(properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU){
+                index = i;
+                break;
+            }
+        }
+    }
+    _SetCurrentPhysicalDevice(_physical_devices[index]);
 
     // -----    7   -----
     float queue_priority = 1.0f;
