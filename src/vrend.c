@@ -4,6 +4,7 @@
 struct QueueFamilies {
     int graphics_queue_index;
     int present_queue_index;
+    int num_queues;
 };
 
 struct PhysicalDeviceDetails {
@@ -17,6 +18,8 @@ struct PhysicalDeviceDetails {
     uint32_t num_formats;
     VkPresentModeKHR* present_modes;
     uint32_t num_present_modes;
+
+    struct QueueFamilies qfamilies;
 };
 
 VkBool32 _CheckInstanceExtensions();
@@ -33,9 +36,13 @@ static const char* _needed_physical_device_extensions[NUM_NEEDED_PHYSICAL_DEVICE
 static SDL_Window* _sdl_window = NULL;
 static VkInstance _vk_instance = NULL;
 static VkSurfaceKHR _vk_surface = NULL;
+static VkDevice _vk_device = NULL;
 
 static VkPhysicalDevice* _physical_devices = NULL;
-static struct PhysicalDeviceDetails _current_physical_device = {0};
+static struct PhysicalDeviceDetails _pdevice = {0};
+
+static VkQueue _graphics_queue = NULL;
+static VkQueue _present_queue = NULL;
 
 /**
  * Vulkan renderer initialization steps:
@@ -46,7 +53,10 @@ static struct PhysicalDeviceDetails _current_physical_device = {0};
  * 4    - Initialize debug utils if enabled
  * 5    - Create Vulkan surface with SDL2
  * 6    - Find Vulkan capable physical devices and select one to use
- * 7    - 
+ * 7    - Create the logical device from the selected
+ *        physical device
+ * 8    - Get the graphics and present queues after device creation
+ * 9    - Swap chain
  */
 
 void INIT_VREND(char* title, uint32_t w, uint32_t h){
@@ -161,12 +171,49 @@ void INIT_VREND(char* title, uint32_t w, uint32_t h){
     _SetCurrentPhysicalDevice(_physical_devices[0]);
 
     // -----    7   -----
+    float queue_priority = 1.0f;
+    VkDeviceQueueCreateInfo* queues_create_ci = malloc(sizeof(VkDeviceQueueCreateInfo) * _pdevice.qfamilies.num_queues);
+    for(uint32_t i = 0; i < _pdevice.qfamilies.num_queues; i ++){
+        queues_create_ci[i].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        queues_create_ci[i].queueCount = 1;
+        queues_create_ci[i].pQueuePriorities = &queue_priority;
+        queues_create_ci[i].flags = 0;
+        queues_create_ci[i].pNext = NULL;
+    }
+    queues_create_ci[0].queueFamilyIndex = _pdevice.qfamilies.graphics_queue_index;
+    queues_create_ci[1].queueFamilyIndex = _pdevice.qfamilies.present_queue_index;
+
+    VkPhysicalDeviceFeatures features = {0};
+
+    VkDeviceCreateInfo device_ci = {0};
+    device_ci.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    device_ci.pNext = NULL;
+    device_ci.pQueueCreateInfos = queues_create_ci;
+    device_ci.queueCreateInfoCount = _pdevice.qfamilies.num_queues;
+    device_ci.pEnabledFeatures = &features;
+    device_ci.enabledLayerCount = 0;
+    device_ci.ppEnabledLayerNames = NULL;
+    device_ci.enabledExtensionCount = NUM_NEEDED_PHYSICAL_DEVICE_EXTENSIONS;
+    device_ci.ppEnabledExtensionNames = _needed_physical_device_extensions;
+
+    result = vkCreateDevice(_pdevice.device, &device_ci, NULL, &_vk_device);
+    if(result != VK_SUCCESS){
+        fprintf(stderr, "VK ERROR %d: failed to create logical device\n", result);
+        exit(EXIT_FAILURE);
+    }
+
+    // -----    8   -----
+    vkGetDeviceQueue(_vk_device, _pdevice.qfamilies.graphics_queue_index, 0, &_graphics_queue);
+    vkGetDeviceQueue(_vk_device, _pdevice.qfamilies.present_queue_index, 0, &_present_queue);
+
+    // -----    9   -----
 }
 
 void FREE_VREND(){
     #if defined DEBUG
         FreeDebugUtils(&_vk_instance);
     #endif
+    vkDestroyDevice(_vk_device, NULL);
     vkDestroySurfaceKHR(_vk_instance, _vk_surface, NULL);
     vkDestroyInstance(_vk_instance, NULL);
     SDL_DestroyWindow(_sdl_window);
@@ -244,7 +291,8 @@ struct QueueFamilies _GetQueueFamilies(VkPhysicalDevice physical_device){
 
     struct QueueFamilies qfamilies = {
         .graphics_queue_index = -1,
-        .present_queue_index = -1
+        .present_queue_index = -1,
+        .num_queues = 2
     };
 
     // Find the number of queue familes the physical device has
@@ -271,14 +319,8 @@ struct QueueFamilies _GetQueueFamilies(VkPhysicalDevice physical_device){
 
 VkBool32 _CheckPhysicalDeviceSurfaceCapabilities(VkPhysicalDevice physical_device){
 
-    VkBool32 has_required_capabilities = VK_FALSE;
-
-    // VkSurfaceCapabilitiesKHR surface_capabilities = {0};
-    // vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, _vk_surface, &surface_capabilities);
-
     // Check if there are surface formats
     uint32_t num_formats = 0;
-    VkSurfaceFormatKHR* formats = NULL;
     vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, _vk_surface, &num_formats, NULL);
     if(num_formats == 0){
         return VK_FALSE;
@@ -286,7 +328,6 @@ VkBool32 _CheckPhysicalDeviceSurfaceCapabilities(VkPhysicalDevice physical_devic
 
     // Check if there are surface present modes
     uint32_t num_present_modes = 0;
-    VkPresentModeKHR* present_modes = NULL;
     vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, _vk_surface, &num_present_modes, NULL);
     if(num_present_modes == 0){
         return VK_FALSE;
@@ -298,27 +339,29 @@ VkBool32 _CheckPhysicalDeviceSurfaceCapabilities(VkPhysicalDevice physical_devic
 void _SetCurrentPhysicalDevice(VkPhysicalDevice physical_device){
 
     // Properties, memory properties, and features
-    _current_physical_device.device = physical_device;
-    vkGetPhysicalDeviceProperties(physical_device, &_current_physical_device.properties);
-    vkGetPhysicalDeviceMemoryProperties(physical_device, &_current_physical_device.memory_properties);
-    vkGetPhysicalDeviceFeatures(physical_device, &_current_physical_device.features);
+    _pdevice.device = physical_device;
+    vkGetPhysicalDeviceProperties(physical_device, &_pdevice.properties);
+    vkGetPhysicalDeviceMemoryProperties(physical_device, &_pdevice.memory_properties);
+    vkGetPhysicalDeviceFeatures(physical_device, &_pdevice.features);
 
     // Capabilities, formats, and present modes
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, _vk_surface, &_current_physical_device.capabilities);
-    vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, _vk_surface, &_current_physical_device.num_formats, NULL);
-    free(_current_physical_device.formats);
-    _current_physical_device.formats = malloc(sizeof(VkSurfaceFormatKHR) * _current_physical_device.num_formats);
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, _vk_surface, &_pdevice.capabilities);
+    vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, _vk_surface, &_pdevice.num_formats, NULL);
+    free(_pdevice.formats);
+    _pdevice.formats = malloc(sizeof(VkSurfaceFormatKHR) * _pdevice.num_formats);
     vkGetPhysicalDeviceSurfaceFormatsKHR(
         physical_device, _vk_surface,
-        &_current_physical_device.num_formats,
-        _current_physical_device.formats
+        &_pdevice.num_formats,
+        _pdevice.formats
     );
-    vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, _vk_surface, &_current_physical_device.num_present_modes, NULL);
-    free(_current_physical_device.present_modes);
-    _current_physical_device.present_modes = malloc(sizeof(VkPresentModeKHR) * _current_physical_device.num_present_modes);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, _vk_surface, &_pdevice.num_present_modes, NULL);
+    free(_pdevice.present_modes);
+    _pdevice.present_modes = malloc(sizeof(VkPresentModeKHR) * _pdevice.num_present_modes);
     vkGetPhysicalDeviceSurfacePresentModesKHR(
         physical_device, _vk_surface,
-        &_current_physical_device.num_present_modes,
-        _current_physical_device.present_modes
+        &_pdevice.num_present_modes,
+        _pdevice.present_modes
     );
+
+    _pdevice.qfamilies = _GetQueueFamilies(physical_device);
 }
