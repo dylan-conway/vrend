@@ -86,19 +86,19 @@ VKAPI_ATTR VkBool32 VKAPI_CALL _DebugCallback(
 ){
     switch(messageSeverity){
         case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
-            printf("\e[0;33m%s\n\e[0m", pCallbackData->pMessage);
+            printf("[I] \e[0;33m%s\n\e[0m", pCallbackData->pMessage);
             break;
         case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
-            printf("\e[0;33m%s\n\e[0m", pCallbackData->pMessage);
+            printf("[I] \e[0;33m%s\n\e[0m", pCallbackData->pMessage);
             break;
         case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
-            printf("\e[0;35m%s\n\e[0m", pCallbackData->pMessage);
+            printf("[W] \e[0;35m%s\n\e[0m", pCallbackData->pMessage);
             break;
         case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
-            printf("\e[0;31m%s\n\e[0m", pCallbackData->pMessage);
+            printf("[E] \e[0;31m%s\n\e[0m", pCallbackData->pMessage);
             break;
         case VK_DEBUG_UTILS_MESSAGE_SEVERITY_FLAG_BITS_MAX_ENUM_EXT:
-            printf("\e[0;30m%s\n\e[0m", pCallbackData->pMessage);
+            printf("[?] \e[0;30m%s\n\e[0m", pCallbackData->pMessage);
             break;
     }
     return VK_FALSE;
