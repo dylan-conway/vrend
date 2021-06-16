@@ -8,7 +8,7 @@ struct QueueFamilies {
 };
 
 struct PhysicalDeviceDetails {
-    VkPhysicalDevice device;
+    VkPhysicalDevice handle;
     VkPhysicalDeviceProperties properties;
     VkPhysicalDeviceMemoryProperties memory_properties;
     VkPhysicalDeviceFeatures features;
@@ -20,6 +20,15 @@ struct PhysicalDeviceDetails {
     uint32_t num_present_modes;
 
     struct QueueFamilies qfamilies;
+};
+
+struct SwapChainDetails {
+    VkSwapchainKHR handle;
+    VkImage* images;
+    VkImageView* image_views;
+    uint32_t num_images;
+    VkFormat image_format;
+    VkExtent2D extent;    
 };
 
 VkBool32 _CheckInstanceExtensions();
@@ -44,21 +53,22 @@ static struct PhysicalDeviceDetails _pdevice = {0};
 static VkQueue _graphics_queue = NULL;
 static VkQueue _present_queue = NULL;
 
-static VkSwapchainKHR _swap_chain = NULL;
+static struct SwapChainDetails _swap_chain = {0};
 
 /**
  * Vulkan renderer initialization steps:
- * 1    - Initialize SDL2 and create window
+ * 1    - Initialize SDL2 and create window.
  * 2    - Check instance extensions and layers (only check
- *        layers if debug is enabled)
- * 3    - Create instance with app info and instance create info
- * 4    - Initialize debug utils if enabled
- * 5    - Create Vulkan surface with SDL2
- * 6    - Find Vulkan capable physical devices and select one to use
+ *        layers if debug is enabled).
+ * 3    - Create instance with app info and instace create info.
+ * 4    - Initialize debug utils if enabled.
+ * 5    - Create Vulkan surface with SDL2.
+ * 6    - Find Vulkan capable physical devices and select one to use.
  * 7    - Create the logical device from the selected
- *        physical device
- * 8    - Get the graphics and present queues after device creation
- * 9    - Swap chain creation. 
+ *        physical device.
+ * 8    - Get the graphics and present queues after device creation.
+ * 9    - Swap chain creation.
+ * 10   - Create render pass.
  */
 
 void INIT_VREND(char* title, uint32_t w, uint32_t h){
@@ -224,7 +234,7 @@ void INIT_VREND(char* title, uint32_t w, uint32_t h){
         device_ci.ppEnabledExtensionNames = _needed_physical_device_extensions;
 
         VkBool32 result;
-        result = vkCreateDevice(_pdevice.device, &device_ci, NULL, &_vk_device);
+        result = vkCreateDevice(_pdevice.handle, &device_ci, NULL, &_vk_device);
         if(result != VK_SUCCESS){
             fprintf(stderr, "VK ERROR %d: failed to create logical device\n", result);
             exit(EXIT_FAILURE);
@@ -326,12 +336,42 @@ void INIT_VREND(char* title, uint32_t w, uint32_t h){
         ci.oldSwapchain = NULL;
 
         VkResult result;
-        result = vkCreateSwapchainKHR(_vk_device, &ci, NULL, &_swap_chain);
+        result = vkCreateSwapchainKHR(_vk_device, &ci, NULL, &_swap_chain.handle);
         if(result != VK_SUCCESS){
             fprintf(stderr, "VK ERROR %d: failed to create swap chain\n", result);
             exit(EXIT_FAILURE);
         }
 
+        vkGetSwapchainImagesKHR(_vk_device, _swap_chain.handle, &_swap_chain.num_images, NULL);
+        _swap_chain.images = malloc(sizeof(VkImage) * _swap_chain.num_images);
+        vkGetSwapchainImagesKHR(_vk_device, _swap_chain.handle, &_swap_chain.num_images, _swap_chain.images);
+
+        _swap_chain.image_format = chosen_surface_format.format;
+        _swap_chain.extent = extent;
+
+        _swap_chain.image_views = malloc(sizeof(VkImageView) * _swap_chain.num_images);
+        for(uint32_t i = 0; i < _swap_chain.num_images; i ++){
+            VkImageViewCreateInfo image_view_ci = {0};
+            image_view_ci.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            image_view_ci.pNext = NULL;
+            image_view_ci.image = _swap_chain.images[i];
+            image_view_ci.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            image_view_ci.format = _swap_chain.image_format;
+            image_view_ci.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+            image_view_ci.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+            image_view_ci.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+            image_view_ci.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+            image_view_ci.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            image_view_ci.subresourceRange.baseMipLevel = 0;
+            image_view_ci.subresourceRange.levelCount = 1;
+            image_view_ci.subresourceRange.baseArrayLayer = 0;
+            image_view_ci.subresourceRange.layerCount = 1;
+            result = vkCreateImageView(_vk_device, &image_view_ci, NULL, &_swap_chain.image_views[i]);
+            if(result != VK_SUCCESS){
+                fprintf(stderr, "VK ERROR %d: failed to create image view #%d\n", result, i);
+                exit(EXIT_FAILURE);
+            }
+        }
 
         #ifdef DEBUG
             printf("SWAP CHAIN CREATION SUCCESSFUL\n{\n");
@@ -341,19 +381,28 @@ void INIT_VREND(char* title, uint32_t w, uint32_t h){
             printf("\tExtent width: %d\n", extent.width);
             printf("\tExtent height: %d\n", extent.height);
             printf("\tMin images: %d\n", num_images);
+            printf("\tNum images: %d\n", _swap_chain.num_images);
             if(ci.imageSharingMode == VK_SHARING_MODE_CONCURRENT){
                 printf("\tSharing mode: CONCURRENT\n");
             } else {
                 printf("\tSharing mode: EXCLUSIVE\n");
             }
-            printf("}\n");
+            printf("}\n\n");
         #endif
+    }
+
+
+    {   // -----    10  -----
+
     }
 
 }
 
 void FREE_VREND(){
-    vkDestroySwapchainKHR(_vk_device, _swap_chain, NULL);
+    for(uint32_t i = 0; i < _swap_chain.num_images; i ++){
+        vkDestroyImageView(_vk_device, _swap_chain.image_views[i], NULL);
+    }
+    vkDestroySwapchainKHR(_vk_device, _swap_chain.handle, NULL);
     vkDestroyDevice(_vk_device, NULL);
     vkDestroySurfaceKHR(_vk_instance, _vk_surface, NULL);
     #ifdef DEBUG
@@ -483,7 +532,7 @@ VkBool32 _CheckPhysicalDeviceSurfaceCapabilities(VkPhysicalDevice physical_devic
 void _SetCurrentPhysicalDevice(VkPhysicalDevice physical_device){
 
     // Properties, memory properties, and features
-    _pdevice.device = physical_device;
+    _pdevice.handle = physical_device;
     vkGetPhysicalDeviceProperties(physical_device, &_pdevice.properties);
     vkGetPhysicalDeviceMemoryProperties(physical_device, &_pdevice.memory_properties);
     vkGetPhysicalDeviceFeatures(physical_device, &_pdevice.features);
