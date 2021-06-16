@@ -137,17 +137,30 @@ void INIT_VREND(char* title, uint32_t w, uint32_t h){
     _physical_devices = malloc(sizeof(VkPhysicalDevice) * num_physical_devices);
     vkEnumeratePhysicalDevices(_vk_instance, &num_physical_devices, _physical_devices);
     for(uint32_t i = 0; i < num_physical_devices; i ++){
-        if(_CheckPhysicalDeviceExtensions(_physical_devices[i]) == VK_FALSE){
-            _physical_devices[i] = NULL;
+        if(_physical_devices != NULL){
+            if(_CheckPhysicalDeviceExtensions(_physical_devices[i]) == VK_FALSE){
+                _physical_devices[i] = NULL;
+            }
         }
     }
     for(uint32_t i = 0; i < num_physical_devices; i ++){
-        struct QueueFamilies qfamilies = _GetQueueFamilies(_physical_devices[i]);
-        if(qfamilies.graphics_queue_index == -1 || qfamilies.present_queue_index == -1){
-            _physical_devices[i] = NULL;
+        if(_physical_devices != NULL){
+            struct QueueFamilies qfamilies = _GetQueueFamilies(_physical_devices[i]);
+            if(qfamilies.graphics_queue_index == -1 || qfamilies.present_queue_index == -1){
+                _physical_devices[i] = NULL;
+            }
+        }
+    }
+    for(uint32_t i = 0; i < num_physical_devices; i ++){
+        if(_physical_devices != NULL){
+            if(_CheckPhysicalDeviceSurfaceCapabilities(_physical_devices[i]) == VK_FALSE){
+                _physical_devices[i] = NULL;
+            }
         }
     }
     _SetCurrentPhysicalDevice(_physical_devices[0]);
+
+    // -----    7   -----
 }
 
 void FREE_VREND(){
@@ -260,23 +273,38 @@ VkBool32 _CheckPhysicalDeviceSurfaceCapabilities(VkPhysicalDevice physical_devic
 
     VkBool32 has_required_capabilities = VK_FALSE;
 
-    VkSurfaceCapabilitiesKHR surface_capabilities = {0};
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, _vk_surface, &surface_capabilities);
+    // VkSurfaceCapabilitiesKHR surface_capabilities = {0};
+    // vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, _vk_surface, &surface_capabilities);
 
+    // Check if there are surface formats
     uint32_t num_formats = 0;
+    VkSurfaceFormatKHR* formats = NULL;
     vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, _vk_surface, &num_formats, NULL);
+    if(num_formats == 0){
+        return VK_FALSE;
+    }
 
+    // Check if there are surface present modes
+    uint32_t num_present_modes = 0;
+    VkPresentModeKHR* present_modes = NULL;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, _vk_surface, &num_present_modes, NULL);
+    if(num_present_modes == 0){
+        return VK_FALSE;
+    }
 
+    return VK_TRUE;
 }
 
 void _SetCurrentPhysicalDevice(VkPhysicalDevice physical_device){
+
+    // Properties, memory properties, and features
     _current_physical_device.device = physical_device;
     vkGetPhysicalDeviceProperties(physical_device, &_current_physical_device.properties);
     vkGetPhysicalDeviceMemoryProperties(physical_device, &_current_physical_device.memory_properties);
     vkGetPhysicalDeviceFeatures(physical_device, &_current_physical_device.features);
 
+    // Capabilities, formats, and present modes
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, _vk_surface, &_current_physical_device.capabilities);
-
     vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, _vk_surface, &_current_physical_device.num_formats, NULL);
     free(_current_physical_device.formats);
     _current_physical_device.formats = malloc(sizeof(VkSurfaceFormatKHR) * _current_physical_device.num_formats);
@@ -285,7 +313,6 @@ void _SetCurrentPhysicalDevice(VkPhysicalDevice physical_device){
         &_current_physical_device.num_formats,
         _current_physical_device.formats
     );
-
     vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, _vk_surface, &_current_physical_device.num_present_modes, NULL);
     free(_current_physical_device.present_modes);
     _current_physical_device.present_modes = malloc(sizeof(VkPresentModeKHR) * _current_physical_device.num_present_modes);
