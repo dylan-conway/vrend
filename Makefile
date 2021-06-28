@@ -13,7 +13,7 @@ ifeq ($(BUILD_MODE), RELEASE)
 	flags += -O3
 endif
 ifeq ($(BUILD_MODE), DEBUG)
-	flags += -g -O3 -DDEBUG
+	flags += -g -DDEBUG
 	src += src/vrend_debug.c
 endif
 
