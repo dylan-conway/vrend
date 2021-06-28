@@ -1,5 +1,5 @@
 
-#include "vkinit.h"
+#include "vk_struct_init.h"
 
 VkCommandPoolCreateInfo GetCommandPoolCI(uint32_t queue_family_index, VkCommandPoolCreateFlags flags){
     VkCommandPoolCreateInfo info = {0};
