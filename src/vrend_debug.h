@@ -6,13 +6,10 @@
 #include <string.h>
 #include <vulkan/vulkan.h>
 
-#include "vk_enum_str.h"
-
 VkBool32 CheckInstanceLayers();
 void DebugUtilsInstanceLayers(VkInstanceCreateInfo* ci);
 void InitDebugUtils(VkInstance* vk_instance);
 void FreeDebugUtils(VkInstance* vk_instance);
-void VK_CHECK(VkResult r, char* s);
 
 VKAPI_ATTR VkBool32 VKAPI_CALL _DebugCallback();
 PFN_vkCreateDebugUtilsMessengerEXT _CreateDebugUtilsMessengerEXT;

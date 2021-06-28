@@ -103,15 +103,3 @@ VKAPI_ATTR VkBool32 VKAPI_CALL _DebugCallback(
     }
     return VK_FALSE;
 }
-
-void VK_CHECK(VkResult r, char* s){
-
-    char* m = STR_VK_RESULT(r);
-
-    if(strstr(m, "ERROR") != NULL || r == VK_RESULT_MAX_ENUM){
-        printf("\e[0;31m%s\e[0m @ %s\n", m, s);
-        exit(EXIT_FAILURE);
-    }
-
-    if(r != VK_SUCCESS) printf("%s @ %s\n", m, s);
-}
