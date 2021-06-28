@@ -6,8 +6,8 @@ cc = gcc
 flags = -std=c99 -Wall
 include_paths = -I"C:/VulkanSDK/1.2.176.1/Include" -I"C:/mingw64/mingw64/include"
 library_paths = -L"C:/VulkanSDK/1.2.176.1/Lib" -L"C:/mingw64/mingw64/lib"
-libraries = -lmingw32 -lSDL2main -lSDL2 -lvulkan-1
-src = src/main.c src/vrend.c
+libraries = -lmingw32 -lSDL2main -lSDL2 -lvulkan-1 -lm
+src = src/main.c src/vrend.c src/vk_struct_init.c
 
 ifeq ($(BUILD_MODE), RELEASE)
 	flags += -O3
