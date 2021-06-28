@@ -290,7 +290,7 @@ void INIT_VREND(char* title, uint32_t w, uint32_t h){
         for(uint32_t i = 0; i < _physical_device.num_formats; i ++){
             VkFormat format = _physical_device.formats[i].format;
             VkColorSpaceKHR color_space = _physical_device.formats[i].colorSpace;
-            if(format == VK_FORMAT_B8G8R8A8_SRGB && color_space == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR){
+            if(format == VK_FORMAT_B8G8R8A8_UNORM && color_space == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR){
                 chosen_format = _physical_device.formats[i];
                 break;
             }
@@ -299,7 +299,7 @@ void INIT_VREND(char* title, uint32_t w, uint32_t h){
         VkPresentModeKHR chosen_present_mode = VK_PRESENT_MODE_FIFO_KHR;
         for(uint32_t i = 0; i < _physical_device.num_present_modes; i ++){
             VkPresentModeKHR present_mode = _physical_device.present_modes[i];
-            if(present_mode == VK_PRESENT_MODE_FIFO_RELAXED_KHR){
+            if(present_mode == VK_PRESENT_MODE_MAILBOX_KHR){
                 chosen_present_mode = present_mode;
                 break;
             }
@@ -543,7 +543,7 @@ void DRAW_VREND(){
     VK_CHECK_S(vkBeginCommandBuffer, _command_buffer, &command_buffer_bi);
 
     VkClearValue clear_value = {0};
-    float flash = abs(sin((float)_frame_counter / 120.0f));
+    float flash = fabs(sin(_frame_counter / 120.0f));
     clear_value.color.float32[0] = 0.0f;
     clear_value.color.float32[1] = 0.0f;
     clear_value.color.float32[2] = flash;
