@@ -42,13 +42,15 @@ static struct PhysicalDeviceInfo        _physical_device = {0};
 static VkDevice                         _device = NULL;
 static VkQueue                          _graphics_queue = NULL;
 static VkQueue                          _present_queue = NULL;
-static struct SwapChainInfo             _swap_chain = {0};
 static VkCommandPool                    _command_pool = NULL;
-static VkCommandBuffer                  _command_buffer = NULL;
-static VkRenderPass                     _render_pass = NULL;
 static VkSemaphore                      _present_semaphore = NULL;
 static VkSemaphore                      _render_semaphore = NULL;
 static VkFence                          _render_fence = NULL;
+
+// Needs to be remade on swap chain creation
+static struct SwapChainInfo             _swap_chain = {0};
+static VkCommandBuffer                  _command_buffer = NULL;
+static VkRenderPass                     _render_pass = NULL;
 static VkPipelineLayout                 _pipeline_layout = NULL;
 static VkPipeline                       _pipeline = NULL;
 
@@ -352,6 +354,15 @@ void _CreateSwapChain(){
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(_physical_device.handle, _surface, &_physical_device.capabilities);
     _window_extent = _physical_device.capabilities.currentExtent;
 
+    while(_window_extent.width == 0 || _window_extent.height == 0){
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(_physical_device.handle, _surface, &_physical_device.capabilities);
+        _window_extent = _physical_device.capabilities.currentExtent;
+        SDL_Event event;
+
+        // Poll events in order to leave minimized mode
+        SDL_WaitEvent(&event);
+    }
+
     VkSurfaceCapabilitiesKHR c = _physical_device.capabilities;
 
     uint32_t num_images = c.minImageCount + 1;
@@ -394,34 +405,6 @@ void _CreateSwapChain(){
             break;
         }
     }
-
-
-    // VkExtent2D extent = {0};
-    // if(c.currentExtent.width != UINT32_MAX){
-    //     extent = c.currentExtent;
-    // } else {
-    //     int width, height;
-    //     SDL_Vulkan_GetDrawableSize(_window, &width, &height);
-
-    //     VkExtent2D actual_extent = {
-    //         .width = (uint32_t)width,
-    //         .height = (uint32_t)height,
-    //     };
-
-    //     uint32_t max_width = c.maxImageExtent.width < actual_extent.width
-    //         ? c.maxImageExtent.width
-    //         : actual_extent.width;
-        
-    //     uint32_t max_height = c.maxImageExtent.height < actual_extent.height
-    //         ? c.maxImageExtent.height
-    //         : actual_extent.height;
-
-    //     uint32_t min_width = c.minImageExtent.width;
-    //     uint32_t min_height = c.minImageExtent.height;
-
-    //     extent.width = max_width < min_width ? min_width : max_width;
-    //     extent.height = max_height < min_height ? min_height : max_height;
-    // }
 
     VkSwapchainCreateInfoKHR ci = {0};
     ci.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
@@ -495,11 +478,6 @@ void _CreateSwapChain(){
         // printf("\tNum images: %d\n", _swap_chain.num_images);
         // printf("}\n\n");
     #endif
-
-    // Command buffers
-    // Render pass
-    // Pipeline layout
-    // Graphics pipeline
 
     _CreateCommandBuffers();
     _CreateRenderPass();
@@ -686,7 +664,6 @@ void DRAW_VREND(){
 
     VK_CHECK_S(vkEndCommandBuffer, _command_buffer);
 
-
     VkSubmitInfo submit = {0};
     submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit.pNext = NULL;
@@ -712,7 +689,7 @@ void DRAW_VREND(){
     present_info.pImageIndices = &image_index;
 
     result = vkQueuePresentKHR(_graphics_queue, &present_info);
-    if(result == VK_ERROR_OUT_OF_DATE_KHR){
+    if(result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR){
         _CreateSwapChain();
         return;
     }
