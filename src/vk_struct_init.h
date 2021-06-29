@@ -47,4 +47,25 @@ VkRenderPassBeginInfo GetRenderPassBI(
     VkClearValue* clear_values
 );
 
+VkPipelineShaderStageCreateInfo GetShaderStageCI(
+    VkShaderStageFlagBits flags,
+    VkShaderModule module
+);
+
+VkPipelineVertexInputStateCreateInfo GetVertexInputCI();
+
+VkPipelineInputAssemblyStateCreateInfo GetInputAssemblyCI(
+    VkPrimitiveTopology topology
+);
+
+VkPipelineRasterizationStateCreateInfo GetRasterizationCI(
+    VkPolygonMode polygon_mode
+);
+
+VkPipelineMultisampleStateCreateInfo GetMultisampleCI();
+
+VkPipelineColorBlendAttachmentState GetColorBlendAttachmentState();
+
+VkPipelineLayoutCreateInfo GetPipelineLayoutCI();
+
 #endif

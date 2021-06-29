@@ -1,33 +1,45 @@
 #include "vrend.h"
 
 struct PhysicalDeviceInfo {
-    VkPhysicalDevice                    handle;
+    VkPhysicalDevice                        handle;
 
-    uint32_t                            graphics_queue_index;
-    uint32_t                            present_queue_index;
-    uint32_t                            num_queues;
+    uint32_t                                graphics_queue_index;
+    uint32_t                                present_queue_index;
+    uint32_t                                num_queues;
 
-    VkPhysicalDeviceProperties          properties;
-    VkPhysicalDeviceMemoryProperties    mem_properties;
-    VkPhysicalDeviceFeatures            features;
-    VkSurfaceCapabilitiesKHR            capabilities;
-    VkPhysicalDeviceLimits              limits;
+    VkPhysicalDeviceProperties              properties;
+    VkPhysicalDeviceMemoryProperties        mem_properties;
+    VkPhysicalDeviceFeatures                features;
+    VkSurfaceCapabilitiesKHR                capabilities;
+    VkPhysicalDeviceLimits                  limits;
 
-    uint32_t                            num_formats;            
-    VkSurfaceFormatKHR*                 formats;
-    uint32_t                            num_present_modes;
-    VkPresentModeKHR*                   present_modes;
+    uint32_t                                num_formats;            
+    VkSurfaceFormatKHR*                     formats;
+    uint32_t                                num_present_modes;
+    VkPresentModeKHR*                       present_modes;
 };
 
 struct SwapChainInfo {
-    VkSwapchainKHR                      handle;
-    VkFormat                            format;
-    uint32_t                            num_images;
-    VkImage*                            images;
-    VkImageView*                        image_views;
-    VkExtent2D                          extent;
-    VkFramebuffer*                      framebuffers;
+    VkSwapchainKHR                          handle;
+    VkFormat                                format;
+    uint32_t                                num_images;
+    VkImage*                                images;
+    VkImageView*                            image_views;
+    VkExtent2D                              extent;
+    VkFramebuffer*                          framebuffers;
 };
+
+// struct PipelineBuildInfo {
+//     VkPipelineShaderStageCreateInfo*        shader_stages_ci;
+//     VkPipelineVertexInputStateCreateInfo    vertex_input_ci;
+//     VkPipelineInputAssemblyStateCreateInfo  input_assembly_ci;
+//     VkViewport                              viewport;
+//     VkRect2D                                scissor;
+//     VkPipelineRasterizationStateCreateInfo  rasterization_ci;
+//     VkPipelineColorBlendAttachmentState     color_blend_attachment;
+//     VkPipelineMultisampleStateCreateInfo    multisampling_ci;
+//     VkPipelineLayout                        layout;
+// };
 
 #define NUM_REQUIRED_PHYSICAL_DEVICE_EXTENSIONS 1
 static const char* _required_physical_device_extensions[NUM_REQUIRED_PHYSICAL_DEVICE_EXTENSIONS] = {
@@ -50,10 +62,15 @@ static VkRenderPass                     _render_pass = NULL;
 static VkSemaphore                      _present_semaphore = NULL;
 static VkSemaphore                      _render_semaphore = NULL;
 static VkFence                          _render_fence = NULL;
+static VkPipelineLayout                 _pipeline_layout = NULL;
+static VkPipeline                       _pipeline = NULL;
 
 VkBool32 _CheckInstanceExtensions();
 void _SetPhysicalDevice(VkPhysicalDevice device);
+void _LoadShaderModule(char* path, VkShaderModule* module);
+void _BuildGraphicsPipeline();
 void CHECK(VkResult result, char* fname, VkBool32 print);
+void _PrintVulkanFunctionName(char* fname);
 
 void INIT_VREND(char* title, uint32_t w, uint32_t h){
 
@@ -401,16 +418,16 @@ void INIT_VREND(char* title, uint32_t w, uint32_t h){
         }
 
         #ifdef DEBUG
-            printf("SWAP CHAIN CREATION SUCCESSFUL\n{\n");
-            printf("\tSurface format: %s\n", STR_VK_FORMAT(chosen_format.format));
-            printf("\tSurface color space: %s\n", STR_VK_COLOR_SPACE_KHR(chosen_format.colorSpace));
-            printf("\tPresent mode: %s\n", STR_VK_PRESENT_MODE_KHR(chosen_present_mode));
-            printf("\tSharing mode: %s\n", STR_VK_SHARING_MODE(ci.imageSharingMode));
-            printf("\tExtent width: %d\n", extent.width);
-            printf("\tExtent height: %d\n", extent.height);
-            printf("\tMin images: %d\n", num_images);
-            printf("\tNum images: %d\n", _swap_chain.num_images);
-            printf("}\n\n");
+            // printf("SWAP CHAIN CREATION SUCCESSFUL\n{\n");
+            // printf("\tSurface format: %s\n", STR_VK_FORMAT(chosen_format.format));
+            // printf("\tSurface color space: %s\n", STR_VK_COLOR_SPACE_KHR(chosen_format.colorSpace));
+            // printf("\tPresent mode: %s\n", STR_VK_PRESENT_MODE_KHR(chosen_present_mode));
+            // printf("\tSharing mode: %s\n", STR_VK_SHARING_MODE(ci.imageSharingMode));
+            // printf("\tExtent width: %d\n", extent.width);
+            // printf("\tExtent height: %d\n", extent.height);
+            // printf("\tMin images: %d\n", num_images);
+            // printf("\tNum images: %d\n", _swap_chain.num_images);
+            // printf("}\n\n");
         #endif
     }
 
@@ -498,11 +515,93 @@ void INIT_VREND(char* title, uint32_t w, uint32_t h){
         VK_CHECK(vkCreateSemaphore, _device, &semaphore_ci, NULL, &_present_semaphore);
         VK_CHECK(vkCreateSemaphore, _device, &semaphore_ci, NULL, &_render_semaphore);
     }
+
+
+    {   // Build graphics pipeline
+
+        VkPipelineLayoutCreateInfo pipeline_layout = GetPipelineLayoutCI();
+        VK_CHECK(vkCreatePipelineLayout, _device, &pipeline_layout, NULL, &_pipeline_layout);
+
+        VkShaderModule vert_shader_module = NULL;
+        _LoadShaderModule("src/vert.spv", &vert_shader_module);
+
+        VkShaderModule frag_shader_module = NULL;
+        _LoadShaderModule("src/frag.spv", &frag_shader_module);
+
+        VkPipelineShaderStageCreateInfo shader_stages[] = {
+            GetShaderStageCI(VK_SHADER_STAGE_VERTEX_BIT, vert_shader_module),
+            GetShaderStageCI(VK_SHADER_STAGE_FRAGMENT_BIT, frag_shader_module)
+        };
+
+        VkViewport viewport = {
+            .x = 0.0f,
+            .y = 0.0f,
+            .width = (float)_swap_chain.extent.width,
+            .height = (float)_swap_chain.extent.height,
+            .minDepth = 0.0f,
+            .maxDepth = 1.0f
+        };
+
+        VkRect2D scissor = {
+            .offset = {
+                .x = 0,
+                .y = 0
+            },
+            .extent = _swap_chain.extent
+        };
+
+        VkPipelineVertexInputStateCreateInfo vertex_input_ci = GetVertexInputCI();
+        VkPipelineInputAssemblyStateCreateInfo input_assembly_ci = GetInputAssemblyCI(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+        VkPipelineRasterizationStateCreateInfo rasterization_ci = GetRasterizationCI(VK_POLYGON_MODE_FILL);
+        VkPipelineMultisampleStateCreateInfo multisample_ci = GetMultisampleCI();
+
+        VkPipelineColorBlendAttachmentState color_blend_attachment = GetColorBlendAttachmentState();
+
+        VkPipelineColorBlendStateCreateInfo color_blend_ci = {0};
+        color_blend_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+        color_blend_ci.pNext = NULL;
+        color_blend_ci.logicOpEnable = VK_FALSE;
+        color_blend_ci.logicOp = VK_LOGIC_OP_COPY;
+        color_blend_ci.attachmentCount = 1;
+        color_blend_ci.pAttachments = &color_blend_attachment;
+
+        VkPipelineViewportStateCreateInfo viewport_ci = {0};
+        viewport_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+        viewport_ci.pNext = NULL;
+        viewport_ci.viewportCount = 1;
+        viewport_ci.pViewports = &viewport;
+        viewport_ci.scissorCount = 1;
+        viewport_ci.pScissors = &scissor;
+
+        VkGraphicsPipelineCreateInfo pipeline_ci = {0};
+        pipeline_ci.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        pipeline_ci.pNext = NULL;
+        pipeline_ci.stageCount = 2;
+        pipeline_ci.pStages = shader_stages;
+        pipeline_ci.pVertexInputState = &vertex_input_ci;
+        pipeline_ci.pViewportState = &viewport_ci;
+        pipeline_ci.pRasterizationState = &rasterization_ci;
+        pipeline_ci.pMultisampleState = &multisample_ci;
+        pipeline_ci.pColorBlendState = &color_blend_ci;
+        pipeline_ci.pInputAssemblyState = &input_assembly_ci;
+        pipeline_ci.layout = _pipeline_layout;
+        pipeline_ci.renderPass = _render_pass;
+        pipeline_ci.subpass = 0;
+        pipeline_ci.basePipelineHandle = NULL;
+        
+        VK_CHECK(vkCreateGraphicsPipelines, _device, NULL, 1, &pipeline_ci, NULL, &_pipeline);
+
+        vkDestroyShaderModule(_device, vert_shader_module, NULL);
+        vkDestroyShaderModule(_device, frag_shader_module, NULL);
+    }
 }
 
 void FREE_VREND(){
 
     vkDeviceWaitIdle(_device);
+
+    vkDestroyPipeline(_device, _pipeline, NULL);
+    vkDestroyPipelineLayout(_device, _pipeline_layout, NULL);
 
     vkDestroyFence(_device, _render_fence, NULL);
     vkDestroySemaphore(_device, _render_semaphore, NULL);
@@ -529,11 +628,11 @@ void FREE_VREND(){
 
 void DRAW_VREND(){
 
-    VK_CHECK_S(vkWaitForFences, _device, 1, &_render_fence, VK_TRUE, 1000000000);
+    VK_CHECK_S(vkWaitForFences, _device, 1, &_render_fence, VK_TRUE, UINT64_MAX);
     VK_CHECK_S(vkResetFences, _device, 1, &_render_fence);
 
     uint32_t image_index;
-    VK_CHECK_S(vkAcquireNextImageKHR, _device, _swap_chain.handle, 1000000000, _present_semaphore, NULL, &image_index);
+    VK_CHECK_S(vkAcquireNextImageKHR, _device, _swap_chain.handle, UINT64_MAX, _present_semaphore, NULL, &image_index);
 
     VK_CHECK_S(vkResetCommandBuffer, _command_buffer, 0);
 
@@ -556,6 +655,9 @@ void DRAW_VREND(){
 
     vkCmdBeginRenderPass(_command_buffer, &render_pass_bi, VK_SUBPASS_CONTENTS_INLINE);
 
+    vkCmdBindPipeline(_command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _pipeline);
+    vkCmdDraw(_command_buffer, 3, 1, 0, 0);
+
     vkCmdEndRenderPass(_command_buffer);
 
     VK_CHECK_S(vkEndCommandBuffer, _command_buffer);
@@ -567,13 +669,10 @@ void DRAW_VREND(){
     
     VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     submit.pWaitDstStageMask = &wait_stage;
-
     submit.waitSemaphoreCount = 1;
     submit.pWaitSemaphores = &_present_semaphore;
-
     submit.signalSemaphoreCount = 1;
     submit.pSignalSemaphores = &_render_semaphore;
-
     submit.commandBufferCount = 1;
     submit.pCommandBuffers = &_command_buffer;
 
@@ -677,6 +776,36 @@ void _SetPhysicalDevice(VkPhysicalDevice device){
     );
 }
 
+void _LoadShaderModule(char* path, VkShaderModule* module){
+    
+    FILE* file = fopen(path, "rb");
+    if(file == NULL){
+        fprintf(stderr, "ERROR: failed to open shader file %s\n", path);
+        exit(EXIT_FAILURE);
+    }
+
+    fseek(file, 0, SEEK_END);
+    long size = ftell(file);
+    rewind(file);
+
+    char* shader_code = malloc(sizeof(char) * size);
+    fread(shader_code, size, sizeof(char), file);
+
+    fclose(file);
+
+    VkShaderModuleCreateInfo module_ci = {0};
+    module_ci.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    module_ci.pNext = NULL;
+    module_ci.flags = 0;
+    module_ci.codeSize = size;
+    module_ci.pCode = (uint32_t*)shader_code;
+
+    VkShaderModule temp_module = NULL;
+    VK_CHECK(vkCreateShaderModule, _device, &module_ci, NULL, &temp_module);
+
+    *module = temp_module;
+}
+
 void CHECK(VkResult result, char* fname, VkBool32 print){
 
     #ifdef DEBUG
@@ -684,31 +813,29 @@ void CHECK(VkResult result, char* fname, VkBool32 print){
         if(result < 0){
             // Always print on exit
             printf("\e[0;31m%s\e[0m @", m);
-            for(uint32_t i = 2; i < strlen(fname); i ++){
-                if(isupper(fname[i]) && islower(fname[i - 1])){
-                    printf(" %c", fname[i]);
-                } else {
-                    printf("%c", fname[i]);
-                }
-            }
-            printf("\n");
+            _PrintVulkanFunctionName(fname);
             exit(EXIT_FAILURE);
         }
-        if(print){
-            result == VK_SUCCESS ? printf("\e[0;32m") : printf("\e[0;33m");
-            printf("%s\e[0m @", m);
-            for(uint32_t i = 2; i < strlen(fname); i ++){
-                if(isupper(fname[i]) && islower(fname[i - 1])){
-                    printf(" %c", fname[i]);
-                } else {
-                    printf("%c", fname[i]);
-                }
+        if(result == VK_SUCCESS){
+            if(print){
+                printf("\e[0;32m%s\e[0m @", m);
+                _PrintVulkanFunctionName(fname);
             }
-            printf("\n");
+        } else {
+            printf("\e[0;33m%s\e[0m @", m);
+            _PrintVulkanFunctionName(fname);
         }
     #endif
 
     if(result < 0){
         exit(EXIT_FAILURE);
     }
+}
+
+void _PrintVulkanFunctionName(char* fname){
+    for(uint32_t i = 2; i < strlen(fname); i ++){
+        if(isupper(fname[i]) && islower(fname[i - 1])) printf(" ");
+        printf("%c", fname[i]);
+    }
+    printf("\n");
 }

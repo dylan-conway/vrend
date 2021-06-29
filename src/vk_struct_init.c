@@ -91,3 +91,92 @@ VkRenderPassBeginInfo GetRenderPassBI(
     info.pClearValues = clear_values;
     return info;
 }
+
+VkPipelineShaderStageCreateInfo GetShaderStageCI(VkShaderStageFlagBits stage_flags, VkShaderModule module){
+    VkPipelineShaderStageCreateInfo info = {0};
+    info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    info.pNext = NULL;
+    info.flags = 0;
+    info.stage = stage_flags;
+    info.module = module;
+    info.pName = "main";
+    info.pSpecializationInfo = NULL;
+    return info;
+}
+
+VkPipelineVertexInputStateCreateInfo GetVertexInputCI(){
+    VkPipelineVertexInputStateCreateInfo info = {0};
+    info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    info.pNext = NULL;
+    info.flags = 0;
+    info.vertexBindingDescriptionCount = 0;
+    info.pVertexBindingDescriptions = NULL;
+    info.vertexAttributeDescriptionCount = 0;
+    info.pVertexAttributeDescriptions = NULL;
+    return info;
+}
+
+VkPipelineInputAssemblyStateCreateInfo GetInputAssemblyCI(VkPrimitiveTopology topology){
+    VkPipelineInputAssemblyStateCreateInfo info = {0};
+    info.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    info.pNext = NULL;
+    info.flags = 0;
+    info.topology = topology;
+    info.primitiveRestartEnable = VK_FALSE;
+    return info;
+}
+
+VkPipelineRasterizationStateCreateInfo GetRasterizationCI(VkPolygonMode polygon_mode){
+    VkPipelineRasterizationStateCreateInfo info = {0};
+    info.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    info.pNext = NULL;
+    info.flags = 0;
+    info.depthClampEnable = VK_FALSE;
+    info.rasterizerDiscardEnable = VK_FALSE;
+    info.polygonMode = polygon_mode;
+    info.lineWidth = 1.0f;
+    info.cullMode = VK_CULL_MODE_NONE;
+    info.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    info.depthBiasEnable = VK_FALSE;
+    info.depthBiasConstantFactor = 0.0f;
+    info.depthBiasClamp = 0.0f;
+    info.depthBiasSlopeFactor = 0.0f;
+    return info;
+}
+
+VkPipelineMultisampleStateCreateInfo GetMultisampleCI(){
+    VkPipelineMultisampleStateCreateInfo info = {0};
+    info.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    info.pNext = NULL;
+    info.flags = 0;
+    info.sampleShadingEnable = VK_FALSE;
+    info.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    info.minSampleShading = 1.0f;
+    info.pSampleMask = NULL;
+    info.alphaToCoverageEnable = VK_FALSE;
+    info.alphaToOneEnable = VK_FALSE;
+    return info;
+}
+
+VkPipelineColorBlendAttachmentState GetColorBlendAttachmentState(){
+    VkPipelineColorBlendAttachmentState attachment = {0};
+    attachment.colorWriteMask = 
+        VK_COLOR_COMPONENT_R_BIT |
+        VK_COLOR_COMPONENT_G_BIT |
+        VK_COLOR_COMPONENT_B_BIT |
+        VK_COLOR_COMPONENT_A_BIT;
+    attachment.blendEnable = VK_FALSE;
+    return attachment;
+}
+
+VkPipelineLayoutCreateInfo GetPipelineLayoutCI(){
+    VkPipelineLayoutCreateInfo info = {0};
+    info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    info.pNext = NULL;
+    info.flags = 0;
+    info.setLayoutCount = 0;
+    info.pSetLayouts = NULL;
+    info.pushConstantRangeCount = 0;
+    info.pPushConstantRanges = NULL;
+    return info;
+}
