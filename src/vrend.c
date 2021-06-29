@@ -25,21 +25,8 @@ struct SwapChainInfo {
     uint32_t                                num_images;
     VkImage*                                images;
     VkImageView*                            image_views;
-    VkExtent2D                              extent;
     VkFramebuffer*                          framebuffers;
 };
-
-// struct PipelineBuildInfo {
-//     VkPipelineShaderStageCreateInfo*        shader_stages_ci;
-//     VkPipelineVertexInputStateCreateInfo    vertex_input_ci;
-//     VkPipelineInputAssemblyStateCreateInfo  input_assembly_ci;
-//     VkViewport                              viewport;
-//     VkRect2D                                scissor;
-//     VkPipelineRasterizationStateCreateInfo  rasterization_ci;
-//     VkPipelineColorBlendAttachmentState     color_blend_attachment;
-//     VkPipelineMultisampleStateCreateInfo    multisampling_ci;
-//     VkPipelineLayout                        layout;
-// };
 
 #define NUM_REQUIRED_PHYSICAL_DEVICE_EXTENSIONS 1
 static const char* _required_physical_device_extensions[NUM_REQUIRED_PHYSICAL_DEVICE_EXTENSIONS] = {
@@ -67,21 +54,23 @@ static VkPipeline                       _pipeline = NULL;
 
 VkBool32 _CheckInstanceExtensions();
 void _SetPhysicalDevice(VkPhysicalDevice device);
+void _CreateSwapChain();
+void _CreateCommandBuffers();
+void _CreateRenderPass();
 void _LoadShaderModule(char* path, VkShaderModule* module);
-void _BuildGraphicsPipeline();
+void _CreateGraphicsPipeline();
+void _CreateFramebuffers();
 void CHECK(VkResult result, char* fname, VkBool32 print);
 void _PrintVulkanFunctionName(char* fname);
 
 void INIT_VREND(char* title, uint32_t w, uint32_t h){
 
     {   // Initialize SDL2 window with Vulkan flag
-        _window_extent.width = w;
-        _window_extent.height = h;
         SDL_Init(SDL_INIT_EVERYTHING);
-        SDL_WindowFlags flags = SDL_WINDOW_SHOWN | SDL_WINDOW_VULKAN;
+        SDL_WindowFlags flags = SDL_WINDOW_SHOWN | SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE;
         _window = SDL_CreateWindow(
             title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-            _window_extent.width, _window_extent.height, flags
+            w, h, flags
         );
         if(_window == NULL){
             fprintf(stderr, "ERROR: failed to create SDL2 window\n");
@@ -300,211 +289,18 @@ void INIT_VREND(char* title, uint32_t w, uint32_t h){
         vkGetDeviceQueue(_device, _physical_device.present_queue_index, 0, &_present_queue);
     }
 
-
-
-    {   // Swap chain creation
-        VkSurfaceFormatKHR chosen_format = _physical_device.formats[0];
-        for(uint32_t i = 0; i < _physical_device.num_formats; i ++){
-            VkFormat format = _physical_device.formats[i].format;
-            VkColorSpaceKHR color_space = _physical_device.formats[i].colorSpace;
-            if(format == VK_FORMAT_B8G8R8A8_UNORM && color_space == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR){
-                chosen_format = _physical_device.formats[i];
-                break;
-            }
-        }
-
-        VkPresentModeKHR chosen_present_mode = VK_PRESENT_MODE_FIFO_KHR;
-        for(uint32_t i = 0; i < _physical_device.num_present_modes; i ++){
-            VkPresentModeKHR present_mode = _physical_device.present_modes[i];
-            if(present_mode == VK_PRESENT_MODE_MAILBOX_KHR){
-                chosen_present_mode = present_mode;
-                break;
-            }
-        }
-
-        VkExtent2D extent = {0};
-        VkSurfaceCapabilitiesKHR c = _physical_device.capabilities;
-        if(c.currentExtent.width != UINT32_MAX){
-            extent = c.currentExtent;
-        } else {
-            int width, height;
-            SDL_Vulkan_GetDrawableSize(_window, &width, &height);
-
-            VkExtent2D actual_extent = {
-                .width = (uint32_t)width,
-                .height = (uint32_t)height,
-            };
-
-            uint32_t max_width = c.maxImageExtent.width < actual_extent.width
-                ? c.maxImageExtent.width
-                : actual_extent.width;
-            
-            uint32_t max_height = c.maxImageExtent.height < actual_extent.height
-                ? c.maxImageExtent.height
-                : actual_extent.height;
-
-            uint32_t min_width = c.minImageExtent.width;
-            uint32_t min_height = c.minImageExtent.height;
-
-            extent.width = max_width < min_width ? min_width : max_width;
-            extent.height = max_height < min_height ? min_height : max_height;
-        }
-
-
-        uint32_t num_images = c.minImageCount + 1;
-        if(c.maxImageCount > 0 && num_images > c.maxImageCount){
-            num_images = c.maxImageCount;
-        }
-
-        VkSwapchainCreateInfoKHR ci = {0};
-        ci.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-        ci.pNext = NULL;
-        ci.surface = _surface;
-        ci.minImageCount = num_images;
-        ci.imageFormat = chosen_format.format;
-        ci.imageColorSpace = chosen_format.colorSpace;
-        ci.imageExtent = extent;
-        ci.imageArrayLayers = 1;
-        ci.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-
-        uint32_t queue_families_indices[] = {
-            _physical_device.graphics_queue_index,
-            _physical_device.present_queue_index
-        };
-
-        if(_physical_device.graphics_queue_index != _physical_device.present_queue_index){
-            ci.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-            ci.queueFamilyIndexCount = _physical_device.num_queues;
-            ci.pQueueFamilyIndices = queue_families_indices;
-        } else {
-            ci.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-            ci.queueFamilyIndexCount = 0;
-            ci.pQueueFamilyIndices = NULL;
-        }
-
-        ci.preTransform = c.currentTransform;
-        ci.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-        ci.presentMode = chosen_present_mode;
-        ci.clipped = VK_TRUE;
-        ci.oldSwapchain = NULL;
-
-        VK_CHECK(vkCreateSwapchainKHR, _device, &ci, NULL, &_swap_chain.handle);
-
-        vkGetSwapchainImagesKHR(_device, _swap_chain.handle, &_swap_chain.num_images, NULL);
-        _swap_chain.images = malloc(sizeof(VkImage) * _swap_chain.num_images);
-        vkGetSwapchainImagesKHR(_device, _swap_chain.handle, &_swap_chain.num_images, _swap_chain.images);
-
-        _swap_chain.format = chosen_format.format;
-        _swap_chain.extent = extent;
-
-        _swap_chain.image_views = malloc(sizeof(VkImageView) * _swap_chain.num_images);
-        for(uint32_t i = 0; i < _swap_chain.num_images; i ++){
-            VkImageViewCreateInfo image_view_ci = {0};
-            image_view_ci.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-            image_view_ci.pNext = NULL;
-            image_view_ci.image = _swap_chain.images[i];
-            image_view_ci.viewType = VK_IMAGE_VIEW_TYPE_2D;
-            image_view_ci.format = _swap_chain.format;
-            image_view_ci.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-            image_view_ci.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-            image_view_ci.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-            image_view_ci.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-            image_view_ci.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            image_view_ci.subresourceRange.baseMipLevel = 0;
-            image_view_ci.subresourceRange.levelCount = 1;
-            image_view_ci.subresourceRange.baseArrayLayer = 0;
-            image_view_ci.subresourceRange.layerCount = 1;
-            VK_CHECK(vkCreateImageView, _device, &image_view_ci, NULL, &_swap_chain.image_views[i]);
-        }
-
-        #ifdef DEBUG
-            // printf("SWAP CHAIN CREATION SUCCESSFUL\n{\n");
-            // printf("\tSurface format: %s\n", STR_VK_FORMAT(chosen_format.format));
-            // printf("\tSurface color space: %s\n", STR_VK_COLOR_SPACE_KHR(chosen_format.colorSpace));
-            // printf("\tPresent mode: %s\n", STR_VK_PRESENT_MODE_KHR(chosen_present_mode));
-            // printf("\tSharing mode: %s\n", STR_VK_SHARING_MODE(ci.imageSharingMode));
-            // printf("\tExtent width: %d\n", extent.width);
-            // printf("\tExtent height: %d\n", extent.height);
-            // printf("\tMin images: %d\n", num_images);
-            // printf("\tNum images: %d\n", _swap_chain.num_images);
-            // printf("}\n\n");
-        #endif
-    }
-
-
-
-    {   // Create command pool and command buffer
+    {   // Create command pool
 
         VkCommandPoolCreateInfo command_pool_ci = GetCommandPoolCI(
             _physical_device.graphics_queue_index, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT
         );
         VK_CHECK(vkCreateCommandPool, _device, &command_pool_ci, NULL, &_command_pool);
 
-
-        VkCommandBufferAllocateInfo command_buffer_ai = GetCommandBufferAI(
-            _command_pool, 1, VK_COMMAND_BUFFER_LEVEL_PRIMARY
-        );
-        VK_CHECK(vkAllocateCommandBuffers, _device, &command_buffer_ai, &_command_buffer);
     }
 
-
-
-    {   // Create render pass
-        VkAttachmentDescription color_attachment = {0};
-        color_attachment.format = _swap_chain.format;
-        color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-        color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        color_attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-        VkAttachmentReference color_attachment_ref = {0};
-        color_attachment_ref.attachment = 0;
-        color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-        VkSubpassDescription subpass = {0};
-        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-        subpass.colorAttachmentCount = 1;
-        subpass.pColorAttachments = &color_attachment_ref;
-
-        VkSubpassDependency subpass_dependency = {0};
-        subpass_dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-        subpass_dependency.dstSubpass = 0;
-        subpass_dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        subpass_dependency.srcAccessMask = 0;
-        subpass_dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        subpass_dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-        VkRenderPassCreateInfo render_pass_ci = GetRenderPassCI(
-            1, &color_attachment,
-            1, &subpass,
-            1, &subpass_dependency
-        );
-        VK_CHECK(vkCreateRenderPass, _device, &render_pass_ci, NULL, &_render_pass);
+    {   // Swap chain creation
+        _CreateSwapChain();
     }
-
-
-
-    {   // Create framebuffers
-        VkFramebufferCreateInfo framebuffer_ci = {0};
-        framebuffer_ci.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebuffer_ci.pNext = NULL;
-        framebuffer_ci.renderPass = _render_pass;
-        framebuffer_ci.attachmentCount = 1;
-        framebuffer_ci.width = _swap_chain.extent.width;
-        framebuffer_ci.height = _swap_chain.extent.height;
-        framebuffer_ci.layers = 1;
-
-        _swap_chain.framebuffers = malloc(sizeof(VkFramebuffer) * _swap_chain.num_images);
-        for(uint32_t i = 0; i < _swap_chain.num_images; i ++){
-            framebuffer_ci.pAttachments = &_swap_chain.image_views[i];
-            VK_CHECK(vkCreateFramebuffer, _device, &framebuffer_ci, NULL, &_swap_chain.framebuffers[i]);
-        }
-    }
-
-
 
     {   // Initialize sync structures
 
@@ -516,84 +312,6 @@ void INIT_VREND(char* title, uint32_t w, uint32_t h){
         VK_CHECK(vkCreateSemaphore, _device, &semaphore_ci, NULL, &_render_semaphore);
     }
 
-
-    {   // Build graphics pipeline
-
-        VkPipelineLayoutCreateInfo pipeline_layout = GetPipelineLayoutCI();
-        VK_CHECK(vkCreatePipelineLayout, _device, &pipeline_layout, NULL, &_pipeline_layout);
-
-        VkShaderModule vert_shader_module = NULL;
-        _LoadShaderModule("src/vert.spv", &vert_shader_module);
-
-        VkShaderModule frag_shader_module = NULL;
-        _LoadShaderModule("src/frag.spv", &frag_shader_module);
-
-        VkPipelineShaderStageCreateInfo shader_stages[] = {
-            GetShaderStageCI(VK_SHADER_STAGE_VERTEX_BIT, vert_shader_module),
-            GetShaderStageCI(VK_SHADER_STAGE_FRAGMENT_BIT, frag_shader_module)
-        };
-
-        VkViewport viewport = {
-            .x = 0.0f,
-            .y = 0.0f,
-            .width = (float)_swap_chain.extent.width,
-            .height = (float)_swap_chain.extent.height,
-            .minDepth = 0.0f,
-            .maxDepth = 1.0f
-        };
-
-        VkRect2D scissor = {
-            .offset = {
-                .x = 0,
-                .y = 0
-            },
-            .extent = _swap_chain.extent
-        };
-
-        VkPipelineVertexInputStateCreateInfo vertex_input_ci = GetVertexInputCI();
-        VkPipelineInputAssemblyStateCreateInfo input_assembly_ci = GetInputAssemblyCI(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-        VkPipelineRasterizationStateCreateInfo rasterization_ci = GetRasterizationCI(VK_POLYGON_MODE_FILL);
-        VkPipelineMultisampleStateCreateInfo multisample_ci = GetMultisampleCI();
-
-        VkPipelineColorBlendAttachmentState color_blend_attachment = GetColorBlendAttachmentState();
-
-        VkPipelineColorBlendStateCreateInfo color_blend_ci = {0};
-        color_blend_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-        color_blend_ci.pNext = NULL;
-        color_blend_ci.logicOpEnable = VK_FALSE;
-        color_blend_ci.logicOp = VK_LOGIC_OP_COPY;
-        color_blend_ci.attachmentCount = 1;
-        color_blend_ci.pAttachments = &color_blend_attachment;
-
-        VkPipelineViewportStateCreateInfo viewport_ci = {0};
-        viewport_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-        viewport_ci.pNext = NULL;
-        viewport_ci.viewportCount = 1;
-        viewport_ci.pViewports = &viewport;
-        viewport_ci.scissorCount = 1;
-        viewport_ci.pScissors = &scissor;
-
-        VkGraphicsPipelineCreateInfo pipeline_ci = {0};
-        pipeline_ci.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-        pipeline_ci.pNext = NULL;
-        pipeline_ci.stageCount = 2;
-        pipeline_ci.pStages = shader_stages;
-        pipeline_ci.pVertexInputState = &vertex_input_ci;
-        pipeline_ci.pViewportState = &viewport_ci;
-        pipeline_ci.pRasterizationState = &rasterization_ci;
-        pipeline_ci.pMultisampleState = &multisample_ci;
-        pipeline_ci.pColorBlendState = &color_blend_ci;
-        pipeline_ci.pInputAssemblyState = &input_assembly_ci;
-        pipeline_ci.layout = _pipeline_layout;
-        pipeline_ci.renderPass = _render_pass;
-        pipeline_ci.subpass = 0;
-        pipeline_ci.basePipelineHandle = NULL;
-        
-        VK_CHECK(vkCreateGraphicsPipelines, _device, NULL, 1, &pipeline_ci, NULL, &_pipeline);
-
-        vkDestroyShaderModule(_device, vert_shader_module, NULL);
-        vkDestroyShaderModule(_device, frag_shader_module, NULL);
-    }
 }
 
 void FREE_VREND(){
@@ -608,6 +326,7 @@ void FREE_VREND(){
     vkDestroySemaphore(_device, _present_semaphore, NULL);
 
     vkDestroyRenderPass(_device, _render_pass, NULL);
+    vkFreeCommandBuffers(_device, _command_pool, 1, &_command_buffer);
     vkDestroyCommandPool(_device, _command_pool, NULL);
     for(uint32_t i = 0; i < _swap_chain.num_images; i ++){
         vkDestroyFramebuffer(_device, _swap_chain.framebuffers[i], NULL);
@@ -626,13 +345,318 @@ void FREE_VREND(){
     SDL_Quit();
 }
 
+void _CreateSwapChain(){
+
+    vkDeviceWaitIdle(_device);
+
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(_physical_device.handle, _surface, &_physical_device.capabilities);
+    _window_extent = _physical_device.capabilities.currentExtent;
+
+    VkSurfaceCapabilitiesKHR c = _physical_device.capabilities;
+
+    uint32_t num_images = c.minImageCount + 1;
+    if(c.minImageCount > 0 && num_images > c.maxImageCount){
+        num_images = c.maxImageCount;
+    }
+
+    // Free structures if made before
+    if(_swap_chain.handle){
+        for(uint32_t i = 0; i < num_images; i ++){
+            vkDestroyFramebuffer(_device, _swap_chain.framebuffers[i], NULL);
+        }
+        free(_swap_chain.framebuffers);
+        vkDestroyPipeline(_device, _pipeline, NULL);
+        vkDestroyPipelineLayout(_device, _pipeline_layout, NULL);
+        vkDestroyRenderPass(_device, _render_pass, NULL);
+        vkFreeCommandBuffers(_device, _command_pool, 1, &_command_buffer);
+        for(uint32_t i = 0; i < num_images; i ++){
+            vkDestroyImageView(_device, _swap_chain.image_views[i], NULL);
+        }
+        free(_swap_chain.image_views);
+        vkDestroySwapchainKHR(_device, _swap_chain.handle, NULL);
+    }
+
+    VkSurfaceFormatKHR chosen_format = _physical_device.formats[0];
+    for(uint32_t i = 0; i < _physical_device.num_formats; i ++){
+        VkFormat format = _physical_device.formats[i].format;
+        VkColorSpaceKHR color_space = _physical_device.formats[i].colorSpace;
+        if(format == VK_FORMAT_B8G8R8A8_UNORM && color_space == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR){
+            chosen_format = _physical_device.formats[i];
+            break;
+        }
+    }
+
+    VkPresentModeKHR chosen_present_mode = VK_PRESENT_MODE_FIFO_KHR;
+    for(uint32_t i = 0; i < _physical_device.num_present_modes; i ++){
+        VkPresentModeKHR present_mode = _physical_device.present_modes[i];
+        if(present_mode == VK_PRESENT_MODE_MAILBOX_KHR){
+            chosen_present_mode = present_mode;
+            break;
+        }
+    }
+
+
+    // VkExtent2D extent = {0};
+    // if(c.currentExtent.width != UINT32_MAX){
+    //     extent = c.currentExtent;
+    // } else {
+    //     int width, height;
+    //     SDL_Vulkan_GetDrawableSize(_window, &width, &height);
+
+    //     VkExtent2D actual_extent = {
+    //         .width = (uint32_t)width,
+    //         .height = (uint32_t)height,
+    //     };
+
+    //     uint32_t max_width = c.maxImageExtent.width < actual_extent.width
+    //         ? c.maxImageExtent.width
+    //         : actual_extent.width;
+        
+    //     uint32_t max_height = c.maxImageExtent.height < actual_extent.height
+    //         ? c.maxImageExtent.height
+    //         : actual_extent.height;
+
+    //     uint32_t min_width = c.minImageExtent.width;
+    //     uint32_t min_height = c.minImageExtent.height;
+
+    //     extent.width = max_width < min_width ? min_width : max_width;
+    //     extent.height = max_height < min_height ? min_height : max_height;
+    // }
+
+    VkSwapchainCreateInfoKHR ci = {0};
+    ci.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    ci.pNext = NULL;
+    ci.surface = _surface;
+    ci.minImageCount = num_images;
+    ci.imageFormat = chosen_format.format;
+    ci.imageColorSpace = chosen_format.colorSpace;
+    ci.imageExtent = _window_extent;
+    ci.imageArrayLayers = 1;
+    ci.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+
+    uint32_t queue_families_indices[] = {
+        _physical_device.graphics_queue_index,
+        _physical_device.present_queue_index
+    };
+
+    if(_physical_device.graphics_queue_index != _physical_device.present_queue_index){
+        ci.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+        ci.queueFamilyIndexCount = _physical_device.num_queues;
+        ci.pQueueFamilyIndices = queue_families_indices;
+    } else {
+        ci.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        ci.queueFamilyIndexCount = 0;
+        ci.pQueueFamilyIndices = NULL;
+    }
+
+    ci.preTransform = c.currentTransform;
+    ci.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    ci.presentMode = chosen_present_mode;
+    ci.clipped = VK_TRUE;
+    ci.oldSwapchain = NULL;
+
+    VK_CHECK(vkCreateSwapchainKHR, _device, &ci, NULL, &_swap_chain.handle);
+
+    vkGetSwapchainImagesKHR(_device, _swap_chain.handle, &_swap_chain.num_images, NULL);
+    _swap_chain.images = malloc(sizeof(VkImage) * _swap_chain.num_images);
+    vkGetSwapchainImagesKHR(_device, _swap_chain.handle, &_swap_chain.num_images, _swap_chain.images);
+
+    _swap_chain.format = chosen_format.format;
+
+    _swap_chain.image_views = malloc(sizeof(VkImageView) * _swap_chain.num_images);
+    for(uint32_t i = 0; i < _swap_chain.num_images; i ++){
+        VkImageViewCreateInfo image_view_ci = {0};
+        image_view_ci.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        image_view_ci.pNext = NULL;
+        image_view_ci.image = _swap_chain.images[i];
+        image_view_ci.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        image_view_ci.format = _swap_chain.format;
+        image_view_ci.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+        image_view_ci.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+        image_view_ci.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+        image_view_ci.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+        image_view_ci.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        image_view_ci.subresourceRange.baseMipLevel = 0;
+        image_view_ci.subresourceRange.levelCount = 1;
+        image_view_ci.subresourceRange.baseArrayLayer = 0;
+        image_view_ci.subresourceRange.layerCount = 1;
+        VK_CHECK(vkCreateImageView, _device, &image_view_ci, NULL, &_swap_chain.image_views[i]);
+    }
+
+    #ifdef DEBUG
+        // printf("SWAP CHAIN CREATION SUCCESSFUL\n{\n");
+        // printf("\tSurface format: %s\n", STR_VK_FORMAT(chosen_format.format));
+        // printf("\tSurface color space: %s\n", STR_VK_COLOR_SPACE_KHR(chosen_format.colorSpace));
+        // printf("\tPresent mode: %s\n", STR_VK_PRESENT_MODE_KHR(chosen_present_mode));
+        // printf("\tSharing mode: %s\n", STR_VK_SHARING_MODE(ci.imageSharingMode));
+        // printf("\tExtent width: %d\n", extent.width);
+        // printf("\tExtent height: %d\n", extent.height);
+        // printf("\tMin images: %d\n", num_images);
+        // printf("\tNum images: %d\n", _swap_chain.num_images);
+        // printf("}\n\n");
+    #endif
+
+    // Command buffers
+    // Render pass
+    // Pipeline layout
+    // Graphics pipeline
+
+    _CreateCommandBuffers();
+    _CreateRenderPass();
+    _CreateGraphicsPipeline();
+    _CreateFramebuffers();
+}
+
+void _CreateCommandBuffers(){
+    VkCommandBufferAllocateInfo command_buffer_ai = GetCommandBufferAI(
+        _command_pool, 1, VK_COMMAND_BUFFER_LEVEL_PRIMARY
+    );
+    VK_CHECK(vkAllocateCommandBuffers, _device, &command_buffer_ai, &_command_buffer);
+}
+
+void _CreateRenderPass(){
+    VkAttachmentDescription color_attachment = {0};
+    color_attachment.format = _swap_chain.format;
+    color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    color_attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    VkAttachmentReference color_attachment_ref = {0};
+    color_attachment_ref.attachment = 0;
+    color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkSubpassDescription subpass = {0};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &color_attachment_ref;
+
+    VkSubpassDependency subpass_dependency = {0};
+    subpass_dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    subpass_dependency.dstSubpass = 0;
+    subpass_dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    subpass_dependency.srcAccessMask = 0;
+    subpass_dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    subpass_dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    VkRenderPassCreateInfo render_pass_ci = GetRenderPassCI(
+        1, &color_attachment,
+        1, &subpass,
+        1, &subpass_dependency
+    );
+    VK_CHECK(vkCreateRenderPass, _device, &render_pass_ci, NULL, &_render_pass);
+}
+
+void _CreateGraphicsPipeline(){
+    
+    VkPipelineLayoutCreateInfo pipeline_layout = GetPipelineLayoutCI();
+    VK_CHECK(vkCreatePipelineLayout, _device, &pipeline_layout, NULL, &_pipeline_layout);
+
+    VkShaderModule vert_shader_module = NULL;
+    _LoadShaderModule("src/vert.spv", &vert_shader_module);
+
+    VkShaderModule frag_shader_module = NULL;
+    _LoadShaderModule("src/frag.spv", &frag_shader_module);
+
+    VkPipelineShaderStageCreateInfo shader_stages[] = {
+        GetShaderStageCI(VK_SHADER_STAGE_VERTEX_BIT, vert_shader_module),
+        GetShaderStageCI(VK_SHADER_STAGE_FRAGMENT_BIT, frag_shader_module)
+    };
+
+    VkViewport viewport = {
+        .x = 0.0f,
+        .y = 0.0f,
+        .width = (float)_window_extent.width,
+        .height = (float)_window_extent.height,
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f
+    };
+
+    VkRect2D scissor = {
+        .offset = {
+            .x = 0,
+            .y = 0
+        },
+        .extent = _window_extent
+    };
+
+    VkPipelineVertexInputStateCreateInfo vertex_input_ci = GetVertexInputCI();
+    VkPipelineInputAssemblyStateCreateInfo input_assembly_ci = GetInputAssemblyCI(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    VkPipelineRasterizationStateCreateInfo rasterization_ci = GetRasterizationCI(VK_POLYGON_MODE_FILL);
+    VkPipelineMultisampleStateCreateInfo multisample_ci = GetMultisampleCI();
+
+    VkPipelineColorBlendAttachmentState color_blend_attachment = GetColorBlendAttachmentState();
+
+    VkPipelineColorBlendStateCreateInfo color_blend_ci = {0};
+    color_blend_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    color_blend_ci.pNext = NULL;
+    color_blend_ci.logicOpEnable = VK_FALSE;
+    color_blend_ci.logicOp = VK_LOGIC_OP_COPY;
+    color_blend_ci.attachmentCount = 1;
+    color_blend_ci.pAttachments = &color_blend_attachment;
+
+    VkPipelineViewportStateCreateInfo viewport_ci = {0};
+    viewport_ci.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewport_ci.pNext = NULL;
+    viewport_ci.viewportCount = 1;
+    viewport_ci.pViewports = &viewport;
+    viewport_ci.scissorCount = 1;
+    viewport_ci.pScissors = &scissor;
+
+    VkGraphicsPipelineCreateInfo pipeline_ci = {0};
+    pipeline_ci.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipeline_ci.pNext = NULL;
+    pipeline_ci.stageCount = 2;
+    pipeline_ci.pStages = shader_stages;
+    pipeline_ci.pVertexInputState = &vertex_input_ci;
+    pipeline_ci.pViewportState = &viewport_ci;
+    pipeline_ci.pRasterizationState = &rasterization_ci;
+    pipeline_ci.pMultisampleState = &multisample_ci;
+    pipeline_ci.pColorBlendState = &color_blend_ci;
+    pipeline_ci.pInputAssemblyState = &input_assembly_ci;
+    pipeline_ci.layout = _pipeline_layout;
+    pipeline_ci.renderPass = _render_pass;
+    pipeline_ci.subpass = 0;
+    pipeline_ci.basePipelineHandle = NULL;
+    
+    VK_CHECK(vkCreateGraphicsPipelines, _device, NULL, 1, &pipeline_ci, NULL, &_pipeline);
+
+    vkDestroyShaderModule(_device, vert_shader_module, NULL);
+    vkDestroyShaderModule(_device, frag_shader_module, NULL);
+}
+
+void _CreateFramebuffers(){
+    VkFramebufferCreateInfo framebuffer_ci = {0};
+    framebuffer_ci.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    framebuffer_ci.pNext = NULL;
+    framebuffer_ci.renderPass = _render_pass;
+    framebuffer_ci.attachmentCount = 1;
+    framebuffer_ci.width = _window_extent.width;
+    framebuffer_ci.height = _window_extent.height;
+    framebuffer_ci.layers = 1;
+
+    _swap_chain.framebuffers = malloc(sizeof(VkFramebuffer) * _swap_chain.num_images);
+    for(uint32_t i = 0; i < _swap_chain.num_images; i ++){
+        framebuffer_ci.pAttachments = &_swap_chain.image_views[i];
+        VK_CHECK(vkCreateFramebuffer, _device, &framebuffer_ci, NULL, &_swap_chain.framebuffers[i]);
+    }
+}
+
 void DRAW_VREND(){
 
     VK_CHECK_S(vkWaitForFences, _device, 1, &_render_fence, VK_TRUE, UINT64_MAX);
     VK_CHECK_S(vkResetFences, _device, 1, &_render_fence);
 
     uint32_t image_index;
-    VK_CHECK_S(vkAcquireNextImageKHR, _device, _swap_chain.handle, UINT64_MAX, _present_semaphore, NULL, &image_index);
+    VkResult result;
+    result = vkAcquireNextImageKHR(_device, _swap_chain.handle, UINT64_MAX, _present_semaphore, NULL, &image_index);
+    if(result == VK_ERROR_OUT_OF_DATE_KHR){
+        _CreateSwapChain();
+        return;
+    }
 
     VK_CHECK_S(vkResetCommandBuffer, _command_buffer, 0);
 
@@ -649,7 +673,7 @@ void DRAW_VREND(){
     clear_value.color.float32[3] = 1.0f;
 
     VkRenderPassBeginInfo render_pass_bi = GetRenderPassBI(
-        _render_pass, (VkOffset2D){0, 0}, _swap_chain.extent, _swap_chain.framebuffers[image_index],
+        _render_pass, (VkOffset2D){0, 0}, _window_extent, _swap_chain.framebuffers[image_index],
         1, &clear_value
     );
 
@@ -687,7 +711,11 @@ void DRAW_VREND(){
     present_info.pWaitSemaphores = &_render_semaphore;
     present_info.pImageIndices = &image_index;
 
-    VK_CHECK_S(vkQueuePresentKHR, _graphics_queue, &present_info);
+    result = vkQueuePresentKHR(_graphics_queue, &present_info);
+    if(result == VK_ERROR_OUT_OF_DATE_KHR){
+        _CreateSwapChain();
+        return;
+    }
 
     _frame_counter += 1;
 }
@@ -757,6 +785,8 @@ void _SetPhysicalDevice(VkPhysicalDevice device){
     vkGetPhysicalDeviceMemoryProperties(device, &_physical_device.mem_properties);
     vkGetPhysicalDeviceFeatures(device, &_physical_device.features);
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, _surface, &_physical_device.capabilities);
+
+    _window_extent = _physical_device.capabilities.currentExtent;
 
     vkGetPhysicalDeviceSurfaceFormatsKHR(
         device, _surface, &_physical_device.num_formats, NULL
